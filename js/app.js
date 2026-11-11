@@ -65,7 +65,8 @@ const pool = sel => sel === 'all' || !sel ? WORDS : (LESSONS.find(L => L.lesson 
 /* ---------- views ---------- */
 const view = { };
 const app = $('#app');
-let cleanup = null;
+let cleanup = null, cur = '';
+function nav(h) { cur = String(h).replace(/^#\/?/, ''); route(); }
 
 view.home = () => {
   const seen = WORDS.filter(w => (S.w[w.id] || {}).box > 0).length, mast = WORDS.filter(w => mastered(w.id)).length;
@@ -88,15 +89,16 @@ view.home = () => {
   <div class="row"><a class="btn pri" href="#/cards?due=1">Ôn ${due || 'từ mới'} ngay</a><a class="btn" href="#/quiz">Làm quiz</a><a class="btn" href="#/quiz?kind=mock">Thi thử</a></div>
   <h2>30 lesson</h2><div class="lessons">${LESSONS.map(L => { const p = lessonProg(L); return `<a class="lesson" href="#/learn/${L.lesson}"><b>Lesson ${L.lesson}</b>
    <div class="mute">${p.s}/${p.n} đã gặp · ${p.m} thuộc</div><div class="bar"><i style="width:${p.m / p.n * 100}%"></i></div></a>`; }).join('')}</div>
-  <h2>Dữ liệu</h2><div class="row"><button class="btn" id="exp">Xuất tiến độ</button>
-   <label class="btn">Nhập <input type="file" id="imp" accept=".json" hidden></label><button class="btn bad" id="rst">Xóa tiến độ</button>
+  <h2>Sao lưu tiến độ</h2><div class="row"><button class="btn" id="exp">Xuất</button><button class="btn" id="imp">Nhập từ ô bên dưới</button><button class="btn bad" id="rst">Xóa tiến độ</button>
    <label class="mute">Mục tiêu đúng <input type="number" id="tgt" min="50" max="100" value="${S.set.target}" style="width:70px">%</label></div>
-  <p class="mute">Tiến độ chỉ lưu trong trình duyệt này. Hãy xuất file để sao lưu hoặc chuyển máy.</p>`;
+  <textarea id="bk" rows="3" placeholder="Bấm Xuất để lấy mã sao lưu, hoặc dán mã vào đây rồi bấm Nhập" style="width:100%;margin-top:8px"></textarea><p class="mute" id="bkmsg">Tiến độ chỉ lưu trong trình duyệt này. Hãy xuất mã và cất ở nơi an toàn.</p>`;
   $('#tdate').onchange = e => { S.set.date = e.target.value; save(); view.home(); };
   $('#tgt').onchange = e => { S.set.target = Math.min(100, Math.max(50, +e.target.value || 85)); save(); view.home(); };
-  $('#exp').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(S)], { type: 'application/json' })); a.download = 'toefl-vocab-progress.json'; a.click(); };
-  $('#imp').onchange = e => { const f = e.target.files[0]; if (!f) return; f.text().then(t => { try { const o = JSON.parse(t); if (!o.w) throw 0; S = o; save(); load(); view.home(); } catch (x) { alert('File không hợp lệ'); } }); };
-  $('#rst').onclick = () => { if (confirm('Xóa toàn bộ tiến độ?')) { S = {}; save(); load(); view.home(); } };
+  const msg = t => { $('#bkmsg').textContent = t; };
+  $('#exp').onclick = () => { const t = JSON.stringify(S); $('#bk').value = t; $('#bk').select(); try { navigator.clipboard.writeText(t).then(() => msg('Đã sao chép mã sao lưu.'), () => msg('Đã chọn sẵn mã, hãy tự sao chép (Ctrl/Cmd+C).')); } catch (e) { msg('Đã chọn sẵn mã, hãy tự sao chép (Ctrl/Cmd+C).'); } };
+  $('#imp').onclick = () => { try { const o = JSON.parse($('#bk').value); if (!o.w) throw 0; S = o; save(); load(); view.home(); } catch (x) { msg('Mã không hợp lệ.'); } };
+  let armed = false;
+  $('#rst').onclick = e => { if (!armed) { armed = true; e.target.textContent = 'Bấm lần nữa để xác nhận xóa'; return; } S = {}; save(); load(); view.home(); };
 };
 
 view.learn = (arg) => {
@@ -156,7 +158,7 @@ view.cards = (_, q) => {
   if (!q.lesson && !q.due && !q.mistakes && !q.go) {
     app.innerHTML = `<h1>Flashcard</h1><div class="card"><p>Chọn phạm vi ôn:</p><div class="row">${lessonSel('lsel', true)}<button class="btn pri" id="go">Bắt đầu</button></div>
     <p class="mute">Mỗi thẻ có 3 bậc gợi ý (phím <span class="kbd">H</span>) — hãy cố nhớ trước khi xem đáp án. Thẻ “Quên” quay lại cuối phiên.</p></div>`;
-    $('#go').onclick = () => { location.hash = '#/cards?go=1&lesson=' + $('#lsel').value; }; return;
+    $('#go').onclick = () => { nav('#/cards?go=1&lesson=' + $('#lsel').value); }; return;
   }
   draw();
 };
@@ -200,7 +202,7 @@ view.quiz = (_, q) => {
     <label>Số câu <select id="cnt"><option>10</option><option selected>20</option><option>40</option></select></label></div>
     <button class="btn pri" id="go">Bắt đầu</button></div>
     <p class="mute">Câu sai sẽ vào “Sổ lỗi sai” và được xếp lại để ôn trong flashcard.</p>`;
-    $('#go').onclick = () => { location.hash = `#/quiz?run=1&kind=${$('#kind').value}&lesson=${$('#lsel').value}&n=${$('#cnt').value}`; }; return;
+    $('#go').onclick = () => { nav(`#/quiz?run=1&kind=${$('#kind').value}&lesson=${$('#lsel').value}&n=${$('#cnt').value}`); }; return;
   }
   const kind = q.kind, sel = q.lesson || 'all', n = +q.n || 20;
   let ws = sel === 'mist' ? WORDS.filter(w => (S.w[w.id] || {}).wrong > 0) : pool(sel);
@@ -260,12 +262,12 @@ view.search = () => {
 /* ---------- router ---------- */
 function route() {
   if (cleanup) { cleanup(); cleanup = null; } app._key = null;
-  const h = location.hash.replace(/^#\/?/, ''), [path, qs] = h.split('?'), [name, arg] = path.split('/');
+  const h = cur, [path, qs] = h.split('?'), [name, arg] = path.split('/');
   const q = Object.fromEntries(new URLSearchParams(qs || ''));
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.r === (name || '')));
   (view[name || 'home'] || view.home)(arg, q); scrollTo(0, 0);
 }
-addEventListener('hashchange', route);
+document.addEventListener('click', e => { const a = e.target.closest('a[href^="#/"]'); if (a) { e.preventDefault(); nav(a.getAttribute('href')); } });
 addEventListener('keydown', e => { if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.ctrlKey || e.metaKey) return; if (app._key) app._key(e); });
 app.addEventListener('click', e => { const b = e.target.closest('[data-say]'); if (b) { e.preventDefault(); speak(b.dataset.say); } });
 route();
